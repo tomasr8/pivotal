@@ -2,7 +2,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 from pivotal.api import maximize, minimize
-from pivotal.expressions import Variable
+from pivotal.expressions import Expression, LessOrEqual, Variable, substitute
 
 
 def assert_solution_almost_equal(expected, actual):
@@ -109,6 +109,51 @@ def test_abs():
     assert (-abs(x)).sign == -1
     assert (-abs(x)).arg.coeff == 1
     assert (-abs(x)).arg.name == x.name
+
+
+def test_substitute_1():
+    x = Variable("x")
+    y = Variable("y")
+
+    sub = substitute(x, x, y)
+    assert sub is y
+    assert repr(sub) == "y"
+
+
+def test_substitute_2():
+    x = Variable("x")
+    y = Variable("y")
+    z = Variable("z")
+
+    expr = x + y
+    new_expr = substitute(expr, y, z)
+
+    assert isinstance(new_expr, Expression)
+    assert repr(new_expr) == "x + z"
+
+
+def test_substitute_3():
+    x = Variable("x")
+    y = Variable("y")
+    z = Variable("z")
+
+    expr = x + y + z
+    new_expr = substitute(expr, y, z)
+
+    assert isinstance(new_expr, Expression)
+    assert repr(new_expr) == "x + z + z"
+
+
+def test_substitute_4():
+    x = Variable("x")
+    y = Variable("y")
+    z = Variable("z")
+
+    expr = x + y <= z
+    new_expr = substitute(expr, y, z)
+
+    assert isinstance(new_expr, LessOrEqual)
+    assert repr(new_expr) == "x + z <= z"
 
 
 def test_mixing_task():

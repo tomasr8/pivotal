@@ -1,6 +1,7 @@
+import math
 import itertools
 from collections import defaultdict
-from typing import Literal, Self
+from typing import Literal, Self, TypeVar
 
 
 class Expression:
@@ -42,13 +43,23 @@ class ComparableMixin:
 class Variable(Expression, ComparableMixin):
     _id_iter = itertools.count()
 
-    def __init__(self, name: str | None = None, coeff: float = 1.0) -> None:
+    def __init__(self, name: str | None = None, *, coeff: float = 1.0, min=-math.inf, max=math.inf) -> None:
         if name is None:
             _id = next(self._id_iter)
             self.name = f"_{_id}"
         else:
             self.name = name
         self.coeff = coeff
+
+        if min == math.inf:
+            raise ValueError("Variable minimum cannot be infinity")
+        if max == -math.inf:
+            raise ValueError("Variable maximum cannot be negative infinity")
+        if min > max:
+            raise ValueError("Variable minimum cannot be greater than maximum")
+
+        self.min = min
+        self.max = max
 
     def __abs__(self) -> "Abs":
         return Abs(self)
@@ -107,6 +118,64 @@ class Variable(Expression, ComparableMixin):
         return f"{self.coeff}*{self.name}"
 
 
+class Multiplication(Expression, ComparableMixin):
+    def __init__(self, var: Variable, coeff: float | int) -> None:
+        self.var = var
+        self.coeff = coeff
+
+    def __repr__(self) -> str:
+        return f"({self.var}) * ({self.coeff})"
+
+    def __abs__(self) -> "Abs":
+        return Abs(self)
+
+    def __neg__(self) -> Self:
+        return Multiplication(self.var, -self.coeff)
+    
+    def __add__(self, other: float | Variable | Self | Abs) -> Self | Sum:
+        match other:
+            case Abs():
+                return Sum(self, other)
+            case Sum(elts=elts):
+                return Sum(self, *elts)
+            case int() | float():
+                if other == 0:
+                    return self
+                return Sum(self, other)
+            case Variable() | int() | float():
+                return Sum(self, other)
+            case _:
+                return NotImplemented
+            
+    def __sub__(self, other: float | Variable | Self | Abs) -> Self | Sum:
+        return self.__add__(-other)
+    
+    def __radd__(self, other: float) -> Self | Sum:
+        match other:
+            case int() | float():
+                if other == 0:
+                    return self
+                return Sum(other, self)
+            case _:
+                return NotImplemented
+            
+    def __rsub__(self, other: float) -> Self | Sum:
+        return (-self).__radd__(other)
+    
+    def __mul__(self, other: float) -> float | Self:
+        match other:
+            case int() | float():
+                if other == 1:
+                    return self
+                if other == 0:
+                    return 0
+                return Multiplication(self.var, self.coeff * other)
+            case _:
+                return NotImplemented
+            
+    __rmul__ = __mul__
+
+
 class Sum(Expression, ComparableMixin):
     def __init__(self, *elts: list[Expression]) -> None:
         self.elts = elts
@@ -158,6 +227,24 @@ class Sum(Expression, ComparableMixin):
 
     def __repr__(self) -> str:
         return " + ".join(repr(x) for x in self.elts)
+    
+    # def _simplify(self) -> Self:
+    #     """Simplify the sum by combining like terms."""
+    #     coeffs = defaultdict(float)
+    #     const = 0
+    #     for elt in self.elts:
+    #         match elt:
+    #             case Variable(name=name, coeff=coeff):
+    #                 coeffs[name] += coeff
+    #             case int() | float() as c:
+    #                 const += c
+    #             case _:
+    #                 continue
+    #     # Rebuild the simplified expression
+    #     new_elts = [Variable(name, coeff) for name, coeff in coeffs.items() if coeff != 0]
+    #     if const != 0:
+    #         new_elts.append(const)
+    #     return Sum(*new_elts) if new_elts else 0
 
 
 class Abs(Expression):
@@ -253,3 +340,40 @@ def get_variable_names(elems: list[Expression | Constraint]) -> list[str]:
         coeffs, _ = get_variable_coeffs(elem)
         variables |= set(coeffs.keys())
     return sorted(variables)
+
+
+def get_variables(elem: Expression | Constraint) -> set[Variable]:
+    variables = set()
+    match elem:
+        case Variable() as v:
+            variables.add(v)
+        case Sum(elts=elts):
+            for expr in elts:
+                variables |= get_variables(expr)
+        case Constraint(left=left, right=right):
+            vars_left = get_variables(left)
+            vars_right = get_variables(right)
+            variables |= vars_left
+            variables |= vars_right
+    return variables
+
+
+_T = TypeVar("T", bound=Expression | Constraint)
+
+
+def substitute(elem: _T, old: Variable, new: Expression) -> _T:
+    match elem:
+        case Variable() as v:
+            if v.name == old.name:
+                return new
+            return v
+        case Sum(elts=elts):
+            return Sum(*(substitute(elt, old, new) for elt in elts))
+        case Constraint(left=left, right=right) as c:
+            return type(c)(
+                substitute(left, old, new),
+                substitute(right, old, new)
+            )
+        case other:
+            # If no match, return the original element unchanged
+            return other

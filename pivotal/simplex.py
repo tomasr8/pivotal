@@ -1,4 +1,5 @@
 import math
+from os import replace
 import warnings
 from collections.abc import Callable
 from enum import Enum, auto
@@ -13,8 +14,11 @@ from pivotal.expressions import (
     Expression,
     GreaterOrEqual,
     LessOrEqual,
+    Variable,
     get_variable_coeffs,
     get_variable_names,
+    get_variables,
+    substitute,
 )
 
 
@@ -170,6 +174,33 @@ def as_tableau(
 
     The LP is converted to its canonical form in the process.
     """
+
+    variables = get_variables((objective, *constraints))
+    substitutions = {}
+    for v in variables:
+        if v.min == 0 and v.max == math.inf:
+            # This is what simplex wants, no need to do anything
+            continue
+        if v.min == -math.inf and v.max == math.inf:
+            # TODO: free var
+            pass
+        elif v.min == v.max:
+            if v.min >= 0:
+                constraints = [*constraints, v == v.min]
+            else:
+                new_var = Variable(coeff=-v.coeff, min=-v.min, max=-v.max)
+                constraints = substitute(constraints, v, new_var)
+                objective = replace(objective, v, new_var)
+                constraints = [*constraints, new_var == -v.min]
+        elif v.max == math.inf and v.min > 0:
+            constraints = [*constraints, v >= v.min]
+        elif v.min == -math.inf and v.max < 0:
+            new_var = Variable(coeff=-v.coeff, min=-v.max, max=-v.min)
+            constraints = replace(constraints, v, new_var)
+            objective = replace(objective, v, new_var)
+            constraints = [*constraints, new_var <= -v.max]
+
+
     variables = get_variable_names((objective, *constraints))
     n_vars = len(variables)
     n_constraints = len(constraints)

@@ -27,7 +27,10 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["numpy"]
+dependencies = [
+    "numpy",
+    "ruff>=0.12.4",
+]
 dynamic = ["version"]
 
 [project.optional-dependencies]
@@ -72,3 +75,8 @@ version = { attr = "pivotal.__version__" }
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
