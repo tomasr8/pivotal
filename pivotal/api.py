@@ -1,7 +1,7 @@
 import math
 from typing import TypeAlias
 
-from pivotal.expressions import Constraint, Expression, get_variable_names
+from pivotal._expressions import Constraint, Expression, get_variable_names
 from pivotal.simplex import ProgramType, solve
 
 

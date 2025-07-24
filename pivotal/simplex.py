@@ -1,5 +1,4 @@
 import math
-from os import replace
 import warnings
 from collections.abc import Callable
 from enum import Enum, auto
@@ -7,8 +6,7 @@ from typing import Literal, TypeVar
 
 import numpy as np
 
-from pivotal.errors import Infeasible, Unbounded
-from pivotal.expressions import (
+from pivotal._expressions import (
     Constraint,
     Equal,
     Expression,
@@ -20,6 +18,7 @@ from pivotal.expressions import (
     get_variables,
     substitute,
 )
+from pivotal.errors import Infeasible, Unbounded
 
 
 class ProgramType(Enum):
@@ -86,7 +85,7 @@ class Pivots:
 
 
 class Tableau:
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self, A: np.ndarray, b: np.ndarray, c: np.ndarray, pivots: Pivots | None = None, *, tolerance: float = 1e-6
     ) -> None:
         self.M = np.block([[np.atleast_2d(c), np.atleast_2d(0)], [A, np.atleast_2d(b).T]])
@@ -166,6 +165,119 @@ def _solve(program: Tableau, *, max_iterations: int, tolerance: float) -> tuple[
     return new_prog.value, new_prog.solution
 
 
+class Substitution:
+    def __init__(self, fn: callable, *args):
+        self.fn = fn
+        self.args = args
+
+
+def invert(name: str, values: dict[str, float]) -> float:
+    return -values[name]
+
+
+def subtract(x: str, y: str, values: dict[str, float]) -> float:
+    return values[x] - values[y]
+
+
+def add_const(x: str, c: float, values: dict[str, float]) -> float:
+    return values[x] + c
+
+
+def invert_add_const(x: str, c: float, values: dict[str, float]) -> float:
+    return -values[x] + c
+
+
+def normalize_variable_domains(
+    objective: Expression, constraints: list[Constraint]
+) -> tuple[Expression, list[Constraint], dict[str, Substitution]]:
+    variables = get_variables((objective, *constraints))
+    substitutions = {}
+
+    for v in variables:
+        if v.min == -math.inf and v.max == math.inf:
+            # v ∊ (-∞, ∞)
+            x = Variable(min=0)
+            y = Variable(min=0)
+            expr = x - y
+            constraints = substitute(constraints, v, expr)
+            objective = substitute(objective, v, expr)
+            substitutions[v.name] = expr
+        elif v.max == math.inf:
+            if v.min == 0:
+                # v ∊ [0, ∞)
+                # This is what simplex wants, no need to do anything
+                continue
+            if v.min > 0:
+                # v ∊ [+n, ∞)
+                constraints = [*constraints, v >= v.min]
+            else:
+                # v ∊ [-n, ∞)
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, x + v.min)
+                objective = substitute(objective, v, x + v.min)
+                substitutions[v.name] = Substitution(add_const, x.name, v.min)
+        elif v.min == -math.inf:
+            if v.max == 0:
+                # v ∊ (-∞, 0]
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, -x)
+                objective = substitute(objective, v, -x)
+                substitutions[v.name] = Substitution(invert, x.name)
+            elif v.max < 0:
+                # v ∊ (-∞, -n]
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, -x)
+                objective = substitute(objective, v, -x)
+                constraints = [*constraints, x >= v.max]
+                substitutions[v.name] = Substitution(invert, x.name)
+            else:
+                # v ∊ (-∞, +n]
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, -x + v.max)
+                objective = substitute(objective, v, -x + v.max)
+                substitutions[v.name] = Substitution(invert_add_const, x.name, v.max)
+        else:
+            if v.min == v.max:
+                # v ∊ [n, n]
+                if v.min >= 0:
+                    constraints = [*constraints, v == v.min]
+                else:
+                    x = Variable(min=0)
+                    constraints = substitute(constraints, v, -x)
+                    objective = substitute(objective, v, -x)
+                    constraints = [*constraints, x == -v.min]
+                    substitutions[v.name] = Substitution(invert, x.name)
+            elif v.min == 0:
+                # v ∊ [0, +n]
+                constraints = [*constraints, v <= v.max]
+            elif v.max == 0:
+                # v ∊ [-n, 0]
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, -x)
+                objective = substitute(objective, v, -x)
+                constraints = [*constraints, x <= v.min]
+                substitutions[v.name] = Substitution(invert, x.name)
+            elif v.min > 0:
+                # v ∊ [+n, +m]
+                constraints = [*constraints, v >= v.min, v <= v.max]
+            elif v.max < 0:
+                # v ∊ [-m, -n]
+                x = Variable(min=0)
+                constraints = substitute(constraints, v, -x)
+                objective = substitute(objective, v, -x)
+                constraints = [*constraints, x >= v.min, x <= v.max]
+                substitutions[v.name] = Substitution(invert, x.name)
+            else:
+                # v ∊ [-m, +n]
+                x = Variable(min=0)
+                y = Variable(min=0)
+                constraints = substitute(constraints, v, x - y)
+                objective = substitute(objective, v, x - y)
+                substitutions[v.name] = Substitution(subtract, x.name, y.name)
+                constraints = [*constraints, x - y >= v.min, x - y <= v.max]
+    return objective, constraints, substitutions
+
+
 def as_tableau(
     _type: ProgramType, objective: Expression, constraints: list[Constraint], *, tolerance: float
 ) -> Tableau:
@@ -175,31 +287,7 @@ def as_tableau(
     The LP is converted to its canonical form in the process.
     """
 
-    variables = get_variables((objective, *constraints))
-    substitutions = {}
-    for v in variables:
-        if v.min == 0 and v.max == math.inf:
-            # This is what simplex wants, no need to do anything
-            continue
-        if v.min == -math.inf and v.max == math.inf:
-            # TODO: free var
-            pass
-        elif v.min == v.max:
-            if v.min >= 0:
-                constraints = [*constraints, v == v.min]
-            else:
-                new_var = Variable(coeff=-v.coeff, min=-v.min, max=-v.max)
-                constraints = substitute(constraints, v, new_var)
-                objective = replace(objective, v, new_var)
-                constraints = [*constraints, new_var == -v.min]
-        elif v.max == math.inf and v.min > 0:
-            constraints = [*constraints, v >= v.min]
-        elif v.min == -math.inf and v.max < 0:
-            new_var = Variable(coeff=-v.coeff, min=-v.max, max=-v.min)
-            constraints = replace(constraints, v, new_var)
-            objective = replace(objective, v, new_var)
-            constraints = [*constraints, new_var <= -v.max]
-
+    objective, constraints, substitutions = normalize_variable_domains(objective, constraints)
 
     variables = get_variable_names((objective, *constraints))
     n_vars = len(variables)
