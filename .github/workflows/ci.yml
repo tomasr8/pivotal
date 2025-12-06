@@ -1,31 +1,34 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
-name: Lint & Test
+name: CI
 
 on:
   push:
-    branches: ["master"]
+    branches: [master]
   pull_request:
-    branches: ["master"]
+    branches: [master]
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v6
+
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: python -m pip install -e .[dev]
-      - name: Run linters & formatters
-        run: pre-commit run --all-files
-      - name: Test with pytest
-        run: pytest
+
+      - name: Lint code 🧹
+        run: |
+          uv run ruff check tests/ pivotal/
+
+      - name: Type check 🏷
+        run: |
+          uv run ty check pivotal/ tests/
+
+      - name: Run tests 🧪
+        run: |
+          uv run pytest --no-cov --doctest-modules
