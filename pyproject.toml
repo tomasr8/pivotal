@@ -18,24 +18,33 @@ keywords = [
 ]
 license = { file = "LICENSE" }
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["numpy"]
+dependencies = ["numpy~=2.3.5"]
 dynamic = ["version"]
 
+[dependency-groups]
+dev = [
+    "pytest==9.0.1",
+    "pytest-snapshot==0.9.0",
+    "pytest-cov==7.0.0",
+    "ruff==0.14.7",
+    "ty==0.0.1a30",
+]
+
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pre-commit"]
+dev = ["pytest", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/tomasr8/pivotal"
-Github = "https://github.com/tomasr8/pivotal"
+GitHub = "https://github.com/tomasr8/pivotal"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -43,7 +52,6 @@ ignore = [
     "D",
     "ANN002",
     "ANN003",
-    "ANN101",
     "RET503",
     "COM812",
     "ISC001",
@@ -63,12 +71,12 @@ line-length = 120
 [tool.ruff.lint.isort]
 lines-after-imports = 2
 
-[tool.setuptools]
+[tool.hatch.build.targets.wheel]
 packages = ["pivotal"]
 
-[tool.setuptools.dynamic]
-version = { attr = "pivotal.__version__" }
+[tool.hatch.version]
+path = "pivotal/__init__.py"
 
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
