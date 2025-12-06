@@ -58,6 +58,8 @@ x + (y - z)*10
 -x
 -(x + y)
 sum([x, y, z])
+abs(x)
+abs(x - 2)
 
 X = [Variable(f"x{i}") for i in range(5)]
 sum(X)
@@ -117,6 +119,29 @@ except Infeasible:
     print("No solution")
 ```
 
+### Absolute values
+
+Absolute values are supported in both the objective and constraints.
+You can use:
+
+- `min |expr|` and `max |-expr|` in the objective (`min -|expr|` and `max |expr|` cannot be solved with pure LP solvers and require MILP solvers instead, see [link](https://optimization.cbe.cornell.edu/index.php?title=Optimization_with_absolute_values))
+- `|expr| ≤ C` and `|expr| = 0` in the constraints (`|expr| ≥ C` and `|expr| = C` cannot be solved with pure LP solvers and require MILP solvers instead, see [link](https://optimization.cbe.cornell.edu/index.php?title=Optimization_with_absolute_values))
+
+```python
+from pivotal import minimize, Variable
+
+x = Variable("x")
+
+objective = abs(x - 5)
+constraints = (
+    abs(x) <= 5,
+)
+
+minimize(objective, constraints)
+# -> value: 0.0
+# -> variables: {'x': 5.0}
+```
+
 ### Iterations & Tolerance
 
 `minimize` and `maximize` take two keyword arguments `max_iterations` and `tolerance`. `max_iterations` (default `math.inf`) controls the maximum number of iterations of the second phase of the Simplex algorithm. If the maximum number of iterations is reached a potentially non-optimal solution is returned. `tolerance` (default `1e-6`) controls the precision of floating point comparisons, e.g. when comparing against zero. Instead of `x == 0.0`, the algorithm considers a value to be zero when it is within the given tolerance: `abs(x) <= tolerance`.
@@ -127,28 +152,21 @@ except Infeasible:
 
 ## TODO (Contributions welcome)
 
-- ✔️ Setting tolerance & max number of iterations
-- (WIP) Arbitrary variable bounds, e.g. `a <= x <= b`
-- (WIP) Support for absolute values using Python's `abs()`
-    - ✔️ in the objective function
-    - in constraints
+- Arbitrary variable bounds, e.g. `a <= x <= b`
 - MILP solver with branch & bound
-
 
 ## Development
 
 ### Setting up
 
-```python
+```bash
 git clone https://github.com/tomasr8/pivotal.git
 cd pivotal
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+uv sync --group dev
 ```
 
 ### Running tests
 
-```python
+```bash
 pytest
 ```

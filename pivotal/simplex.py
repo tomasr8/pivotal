@@ -134,12 +134,18 @@ def linearize_abs(
     objective: Expression, constraints: list[Constraint], program_type: ProgramType
 ) -> tuple[Expression, list[Constraint], list[str]]:
     """
-    Linearize absolute value expressions in the objective function.
+    Linearize absolute value expressions in the objective function and constraints.
 
     For each abs(expr) in the objective:
     - Create a new auxiliary variable t
     - Replace abs(expr) with t (or -t if the sign is negative)
     - Add constraints: t >= expr and t >= -expr
+
+    For constraints:
+    - abs(expr) <= C is replaced by: expr <= C and -expr <= C
+    - abs(expr) = 0 is replaced by: expr = 0
+    - abs(expr) >= C requires MILP (raises error)
+    - abs(expr) = C (C != 0) requires MILP (raises error)
 
     This linearization only works when "sign constraints are satisfied":
     - For minimization: coefficients must be positive (e.g., minimize(abs(x)) or minimize(2*abs(x)))
@@ -165,10 +171,13 @@ def linearize_abs(
     # Get original variable names before transformation
     original_vars = get_variable_names((objective, *constraints))
 
+    # Linearize constraints containing absolute values
+    constraints = _linearize_abs_in_constraints(constraints)
+
     if not abs_expressions:
         return objective, constraints, original_vars
 
-    # Validate sign constraints
+    # Validate sign constraints for objective
     for abs_expr in abs_expressions:
         if program_type == ProgramType.MIN and abs_expr.sign == -1:
             msg = (
@@ -185,7 +194,7 @@ def linearize_abs(
             )
             raise AbsoluteValueRequiresMILP(msg)
 
-    # Create auxiliary variables and constraints for each absolute value
+    # Create auxiliary variables and constraints for each absolute value in objective
     new_constraints = list(constraints)
     replacements = {}
 
@@ -215,6 +224,136 @@ def linearize_abs(
 
     new_objective = replace_abs(objective)
     return new_objective, new_constraints, original_vars
+
+
+def _contains_abs(expr: Expression) -> bool:
+    """Check if an expression contains any Abs terms."""
+    match expr:
+        case Abs():
+            return True
+        case Sum(elts=elts):
+            return any(_contains_abs(elt) for elt in elts)
+        case _:
+            return False
+
+
+def _linearize_abs_in_constraints(constraints: list[Constraint]) -> list[Constraint]:
+    """
+    Linearize absolute value expressions in constraints.
+
+    Transformations:
+    - abs(expr) <= C becomes: expr <= C and -expr <= C
+    - abs(expr) = 0 becomes: expr = 0
+    - abs(expr) >= C raises AbsoluteValueRequiresMILP
+    - abs(expr) = C (C != 0) raises AbsoluteValueRequiresMILP
+    """
+    new_constraints = []
+
+    for constraint in constraints:
+        # Check if constraint contains absolute values
+        has_abs_left = _contains_abs(constraint.left)
+        has_abs_right = _contains_abs(constraint.right)
+
+        if not has_abs_left and not has_abs_right:
+            # No absolute values, keep as is
+            new_constraints.append(constraint)
+            continue
+
+        if has_abs_left and has_abs_right:
+            msg = f"Constraints with absolute values on both sides are not supported. Constraint: {constraint}"
+            raise AbsoluteValueRequiresMILP(msg)
+
+        # Normalize so abs is on the left side
+        normalized_constraint = _swap_constraint_sides(constraint) if has_abs_right else constraint
+
+        # Now abs is on the left side
+        # Get the coefficients from the right side to check if it's a constant
+        right_coeffs, right_const = get_variable_coeffs(normalized_constraint.right)
+
+        # Check if left side is a single Abs expression (possibly with coefficient)
+        abs_expr = _extract_single_abs(normalized_constraint.left)
+        if abs_expr is None:
+            msg = f"Only constraints with a single absolute value term are supported. Constraint: {constraint}"
+            raise AbsoluteValueRequiresMILP(msg)
+
+        # The RHS should be a constant (all variable coeffs should be zero)
+        if any(coeff != 0 for coeff in right_coeffs.values()):
+            msg = f"Absolute value constraints must have a constant on the right-hand side. Constraint: {constraint}"
+            raise AbsoluteValueRequiresMILP(msg)
+
+        rhs_value = right_const
+
+        # Handle different constraint types
+        match normalized_constraint:
+            case LessOrEqual():
+                # abs(expr) <= C becomes: expr <= C and -expr <= C
+                if rhs_value < 0:
+                    msg = (
+                        f"Constraint |expr| <= {rhs_value} is infeasible (absolute value cannot be negative). "
+                        f"Constraint: {constraint}"
+                    )
+                    raise Infeasible(msg)
+                # Create constraints using the right-hand side from the original constraint
+                new_constraints.append(LessOrEqual(abs_expr.arg, normalized_constraint.right))
+                new_constraints.append(LessOrEqual(-abs_expr.arg, normalized_constraint.right))
+
+            case Equal():
+                # abs(expr) = 0 becomes: expr = 0
+                # abs(expr) = C (C != 0) requires MILP
+                if rhs_value != 0:
+                    msg = (
+                        f"Constraint |expr| = {rhs_value} requires Mixed-Integer Linear Programming (MILP). "
+                        "Only |expr| = 0 is supported, which simplifies to expr = 0."
+                    )
+                    raise AbsoluteValueRequiresMILP(msg)
+                new_constraints.append(Equal(abs_expr.arg, 0))
+
+            case GreaterOrEqual():
+                # abs(expr) >= C requires MILP
+                msg = (
+                    f"Constraint |expr| >= {rhs_value} requires Mixed-Integer Linear Programming (MILP). "
+                    "Consider rewriting as |expr| <= C if possible."
+                )
+                raise AbsoluteValueRequiresMILP(msg)
+            case _:
+                # This should never happen, but satisfy type checker
+                msg = f"Unknown constraint type: {type(normalized_constraint)}"
+                raise ValueError(msg)
+
+    return new_constraints
+
+
+def _swap_constraint_sides(constraint: Constraint) -> Constraint:
+    """Swap left and right sides of a constraint, reversing the comparison."""
+    match constraint:
+        case Equal():
+            return Equal(constraint.right, constraint.left)
+        case LessOrEqual():
+            return GreaterOrEqual(constraint.right, constraint.left)
+        case GreaterOrEqual():
+            return LessOrEqual(constraint.right, constraint.left)
+        case _:
+            # This should never happen, but satisfy type checker
+            msg = f"Unknown constraint type: {type(constraint)}"
+            raise ValueError(msg)
+
+
+def _extract_single_abs(expr: Expression) -> Abs | None:
+    """
+    Extract a single Abs expression from an expression.
+    Returns None if the expression is not a single Abs (possibly with coefficient).
+    """
+    match expr:
+        case Abs():
+            return expr
+        case Sum(elts=elts):
+            # Check if it's a single Abs with other constant terms
+            abs_exprs = [elt for elt in elts if isinstance(elt, Abs)]
+            if len(abs_exprs) == 1 and all(isinstance(elt, (int, float, Abs)) for elt in elts):
+                return abs_exprs[0]
+            return None
+        case _:
+            return None
 
 
 def solve(

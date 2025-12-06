@@ -3,7 +3,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from pivotal.api import maximize, minimize
-from pivotal.errors import AbsoluteValueRequiresMILP
+from pivotal.errors import AbsoluteValueRequiresMILP, Infeasible
 from pivotal.expressions import Variable
 
 
@@ -302,3 +302,159 @@ def test_abs_minimize_negative_raises_error():
 
     with pytest.raises(AbsoluteValueRequiresMILP):
         minimize(-abs(x), (x <= 10,))
+
+
+############ Tests for abs() in constraints
+
+
+def test_abs_constraint_less_equal():
+    # Test abs(x - 5) <= 3
+    # This means -3 <= x - 5 <= 3, so 2 <= x <= 8
+    # Minimize x subject to abs(x - 5) <= 3
+    # Expected: x = 2 (since x >= 0 and we minimize)
+    x = Variable("x")
+
+    solution = minimize(x, (abs(x - 5) <= 3,))
+
+    assert np.isclose(solution[0], 2.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 2.0, atol=1e-5)
+
+
+def test_abs_constraint_less_equal_maximize():
+    # Maximize x subject to abs(x - 5) <= 3
+    # This means 2 <= x <= 8
+    # Expected: x = 8
+    x = Variable("x")
+
+    solution = maximize(x, (abs(x - 5) <= 3,))
+
+    assert np.isclose(solution[0], 8.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 8.0, atol=1e-5)
+
+
+def test_abs_constraint_less_equal_two_variables():
+    # Minimize x + y subject to abs(x - y) <= 2
+    # This means -2 <= x - y <= 2
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(x + y, (abs(x - y) <= 2, x + y >= 4))
+
+    # Optimal: x and y should be as small as possible while satisfying constraints
+    # With x + y = 4 and |x - y| <= 2, we get x = 1, y = 3 or x = 3, y = 1
+    # But we want to minimize x + y, so x + y = 4
+    assert np.isclose(solution[0], 4.0, atol=1e-5)
+
+
+def test_abs_constraint_equal_zero():
+    # Test abs(x - 3) = 0
+    # This simplifies to x - 3 = 0, so x = 3
+    x = Variable("x")
+
+    solution = minimize(x, (abs(x - 3) == 0,))
+
+    assert np.isclose(solution[0], 3.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 3.0, atol=1e-5)
+
+
+def test_abs_constraint_equal_zero_complex():
+    # Test abs(2*x + 3*y - 12) = 0
+    # This means 2*x + 3*y = 12
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(x + y, (abs(2 * x + 3 * y - 12) == 0,))
+
+    # With 2*x + 3*y = 12 and minimize x + y
+    # At x = 0: 3*y = 12, y = 4, x + y = 4
+    # At y = 0: 2*x = 12, x = 6, x + y = 6
+    # Optimal is x = 0, y = 4
+    assert np.isclose(solution[0], 4.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 0.0, atol=1e-5)
+    assert np.isclose(solution[1]["y"], 4.0, atol=1e-5)
+
+
+def test_abs_constraint_equal_nonzero_raises_error():
+    # abs(x) = 5 should raise AbsoluteValueRequiresMILP
+    x = Variable("x")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x, (abs(x) == 5,))
+
+
+def test_abs_constraint_greater_equal_raises_error():
+    # abs(x) >= 3 should raise AbsoluteValueRequiresMILP
+    x = Variable("x")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x, (abs(x) >= 3,))
+
+
+def test_abs_constraint_negative_rhs_raises_error():
+    # abs(x) <= -1 should raise Infeasible (absolute value can't be negative)
+    x = Variable("x")
+
+    with pytest.raises(Infeasible):
+        minimize(x, (abs(x) <= -1,))
+
+
+def test_abs_constraint_with_variable_rhs_raises_error():
+    # abs(x) <= y should raise error (RHS must be constant)
+    x = Variable("x")
+    y = Variable("y")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x, (abs(x) <= y,))
+
+
+def test_abs_constraint_both_sides_raises_error():
+    # abs(x) <= abs(y) should raise error
+    x = Variable("x")
+    y = Variable("y")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x + y, (abs(x) <= abs(y),))
+
+
+def test_abs_constraint_multiple_abs_raises_error():
+    # abs(x) + abs(y) <= 5 should raise error (only single abs supported)
+    x = Variable("x")
+    y = Variable("y")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x + y, (abs(x) + abs(y) <= 5,))
+
+
+def test_abs_constraint_right_side():
+    # Test 3 <= abs(x - 5) (abs on right side, should be normalized)
+    # This is abs(x - 5) >= 3, which should raise error
+    x = Variable("x")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(x, (3 <= abs(x - 5),))
+
+
+def test_abs_constraint_combined_with_objective():
+    # Test using abs in both objective and constraints
+    # Minimize abs(x) subject to abs(x - 10) <= 2
+    # This means 8 <= x <= 12
+    # Minimizing abs(x) with x in [8, 12] gives x = 8, abs(x) = 8
+    x = Variable("x")
+
+    solution = minimize(abs(x), (abs(x - 10) <= 2,))
+
+    assert np.isclose(solution[0], 8.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 8.0, atol=1e-5)
+
+
+def test_abs_constraint_simple_variable():
+    # Test abs(x) <= 5
+    # This means -5 <= x <= 5, but since x >= 0, it's 0 <= x <= 5
+    # Maximize x subject to abs(x) <= 5
+    # Expected: x = 5
+    x = Variable("x")
+
+    solution = maximize(x, (abs(x) <= 5,))
+
+    assert np.isclose(solution[0], 5.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)

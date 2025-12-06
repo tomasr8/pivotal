@@ -160,7 +160,7 @@ class Sum(Expression, ComparableMixin):
         return " + ".join(repr(x) for x in self.elts)
 
 
-class Abs(Expression):
+class Abs(Expression, ComparableMixin):
     def __init__(self, arg: Expression, sign: Literal[-1, 1] = 1) -> None:
         self.arg = arg
         self.sign = sign
