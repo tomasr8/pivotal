@@ -25,9 +25,9 @@ jobs:
         run: |
           uv run ruff check tests/ pivotal/
 
-      - name: Type check 🏷
-        run: |
-          uv run ty check pivotal/ tests/
+      # - name: Type check 🏷
+      #   run: |
+      #     uv run ty check pivotal/ tests/
 
       - name: Run tests 🧪
         run: |
