@@ -6,13 +6,16 @@ from typing import Literal, TypeVar
 
 import numpy as np
 
-from pivotal.errors import Infeasible, Unbounded
+from pivotal.errors import AbsoluteValueRequiresMILP, Infeasible, Unbounded
 from pivotal.expressions import (
+    Abs,
     Constraint,
     Equal,
     Expression,
     GreaterOrEqual,
     LessOrEqual,
+    Sum,
+    Variable,
     get_variable_coeffs,
     get_variable_names,
 )
@@ -82,7 +85,7 @@ class Pivots:
 
 
 class Tableau:
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self, A: np.ndarray, b: np.ndarray, c: np.ndarray, pivots: Pivots | None = None, *, tolerance: float = 1e-6
     ) -> None:
         self.M = np.block([[np.atleast_2d(c), np.atleast_2d(0)], [A, np.atleast_2d(b).T]])
@@ -127,19 +130,122 @@ class Tableau:
         return f"Tableau:\n{self.M}\nPivots:\n{self.pivots}"
 
 
+def linearize_abs(
+    objective: Expression, constraints: list[Constraint], program_type: ProgramType
+) -> tuple[Expression, list[Constraint], list[str]]:
+    """
+    Linearize absolute value expressions in the objective function.
+
+    For each abs(expr) in the objective:
+    - Create a new auxiliary variable t
+    - Replace abs(expr) with t (or -t if the sign is negative)
+    - Add constraints: t >= expr and t >= -expr
+
+    This linearization only works when "sign constraints are satisfied":
+    - For minimization: coefficients must be positive (e.g., minimize(abs(x)) or minimize(2*abs(x)))
+    - For maximization: coefficients must be negative (e.g., maximize(-abs(x)))
+
+    Otherwise, the problem requires Mixed-Integer Linear Programming (MILP).
+
+    Returns the transformed objective, constraints, and list of original variable names.
+    """
+    abs_expressions = []
+
+    def collect_abs(expr: Expression) -> None:
+        """Recursively collect all Abs expressions."""
+        match expr:
+            case Abs():
+                abs_expressions.append(expr)
+            case Sum(elts=elts):
+                for elt in elts:
+                    collect_abs(elt)
+
+    collect_abs(objective)
+
+    # Get original variable names before transformation
+    original_vars = get_variable_names((objective, *constraints))
+
+    if not abs_expressions:
+        return objective, constraints, original_vars
+
+    # Validate sign constraints
+    for abs_expr in abs_expressions:
+        if program_type == ProgramType.MIN and abs_expr.sign == -1:
+            msg = (
+                "Cannot minimize negative absolute values (e.g., minimize(-abs(x))). "
+                "This requires Mixed-Integer Linear Programming (MILP). "
+                "Consider using maximize(abs(x)) instead, or negate the entire objective."
+            )
+            raise AbsoluteValueRequiresMILP(msg)
+        if program_type == ProgramType.MAX and abs_expr.sign == 1:
+            msg = (
+                "Cannot maximize positive absolute values (e.g., maximize(abs(x))). "
+                "This requires Mixed-Integer Linear Programming (MILP). "
+                "Consider using maximize(-abs(x)) or minimize(abs(x)) instead."
+            )
+            raise AbsoluteValueRequiresMILP(msg)
+
+    # Create auxiliary variables and constraints for each absolute value
+    new_constraints = list(constraints)
+    replacements = {}
+
+    for abs_expr in abs_expressions:
+        # Create auxiliary variable
+        aux_var = Variable()
+
+        # If the sign is negative (e.g., -abs(x)), we use -aux_var
+        replacement = -aux_var if abs_expr.sign == -1 else aux_var
+        replacements[id(abs_expr)] = replacement
+
+        # Add constraints: aux_var >= arg and aux_var >= -arg
+        new_constraints.append(aux_var >= abs_expr.arg)
+        new_constraints.append(aux_var >= -abs_expr.arg)
+
+    # Replace Abs expressions in the objective
+    def replace_abs(expr: Expression) -> Expression:
+        """Replace Abs expressions with auxiliary variables."""
+        match expr:
+            case Abs():
+                return replacements[id(expr)]
+            case Sum(elts=elts):
+                new_elts = [replace_abs(elt) for elt in elts]
+                return Sum(*new_elts)
+            case _:
+                return expr
+
+    new_objective = replace_abs(objective)
+    return new_objective, new_constraints, original_vars
+
+
 def solve(
-    _type: ProgramType, objective: Expression, constraints: list[Constraint], *, max_iterations: int, tolerance: float
-) -> tuple[float, np.ndarray]:
+    _type: ProgramType,
+    objective: Expression,
+    constraints: list[Constraint] | tuple[Constraint, ...],
+    *,
+    max_iterations: float,
+    tolerance: float,
+) -> tuple[float, np.ndarray, list[str], list[str]]:
     """
     The main entrypoint to the simplex algorithm.
 
-    This function accepts a high-level representation of the LP and returns the optimal value and the solution.
+    This function accepts a high-level representation of the LP and returns:
+    - optimal value
+    - solution (values for all variables)
+    - all variable names (including auxiliary)
+    - original variable names (user-defined only)
     """
+    # Linearize absolute values in the objective
+    objective, constraints, original_vars = linearize_abs(objective, constraints, _type)
+
+    # Get all variable names after transformation
+    all_vars = get_variable_names([objective, *constraints])
+
     program = as_tableau(_type, objective, constraints, tolerance=tolerance)
-    return _solve(program, max_iterations=max_iterations, tolerance=tolerance)
+    value, solution = _solve(program, max_iterations=max_iterations, tolerance=tolerance)
+    return value, solution, all_vars, original_vars
 
 
-def _solve(program: Tableau, *, max_iterations: int, tolerance: float) -> tuple[float, np.ndarray]:
+def _solve(program: Tableau, *, max_iterations: float, tolerance: float) -> tuple[float, np.ndarray]:
     aux_program = create_phase_one_program(program)
     run_simplex(aux_program)
 
@@ -403,7 +509,7 @@ def find_pivot(program: Tableau) -> tuple[int, int] | None:
     return None
 
 
-def run_simplex(program: Tableau, *, max_iterations: int | None = math.inf) -> None:
+def run_simplex(program: Tableau, *, max_iterations: float | None = math.inf) -> None:
     """Run the simplex algorithm starting from a feasible solution."""
     iterations = 0
     while (pivot := find_pivot(program)) is not None:

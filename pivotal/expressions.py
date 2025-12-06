@@ -235,6 +235,12 @@ def get_variable_coeffs(elem: Expression | Constraint) -> tuple[dict[str, float]
                 c += _c
                 for v in _variables:
                     variables[v] += _variables[v]
+        case Abs(arg=arg):
+            # For collecting variable names, extract from the argument
+            _variables, _c = get_variable_coeffs(arg)
+            for v in _variables:
+                variables[v] += _variables[v]
+            c += _c
         case Constraint(left=left, right=right):
             vars_left, c_left = get_variable_coeffs(left)
             vars_right, c_right = get_variable_coeffs(right)

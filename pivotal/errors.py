@@ -1,6 +1,14 @@
-class Unbounded(Exception):
+class PivotalError(Exception):
     pass
 
 
-class Infeasible(Exception):
+class Unbounded(PivotalError):
+    pass
+
+
+class Infeasible(PivotalError):
+    pass
+
+
+class AbsoluteValueRequiresMILP(PivotalError):
     pass

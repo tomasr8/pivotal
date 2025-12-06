@@ -39,9 +39,6 @@ dev = [
     "ty==0.0.1a30",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest", "ruff"]
-
 [project.urls]
 Homepage = "https://github.com/tomasr8/pivotal"
 GitHub = "https://github.com/tomasr8/pivotal"
@@ -53,13 +50,16 @@ ignore = [
     "ANN002",
     "ANN003",
     "RET503",
+    "C901",
     "COM812",
+    "ERA",
     "ISC001",
     "N802",
     "N803",
     "N806",
     "N818",
     "S101",
+    "PLR",
 ]
 
 [tool.ruff.lint.per-file-ignores]

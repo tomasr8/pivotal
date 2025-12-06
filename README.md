@@ -130,7 +130,7 @@ except Infeasible:
 - ✔️ Setting tolerance & max number of iterations
 - (WIP) Arbitrary variable bounds, e.g. `a <= x <= b`
 - (WIP) Support for absolute values using Python's `abs()`
-    - in the objective function
+    - ✔️ in the objective function
     - in constraints
 - MILP solver with branch & bound
 

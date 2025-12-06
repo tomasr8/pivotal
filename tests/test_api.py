@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from pivotal.api import maximize, minimize
+from pivotal.errors import AbsoluteValueRequiresMILP
 from pivotal.expressions import Variable
 
 
@@ -154,7 +156,7 @@ def test_assignment_problem():
 
 def test_redundant_constraints():
     # OCW, page 82
-    X = [Variable(f"x{i+1}") for i in range(3)]
+    X = [Variable(f"x{i + 1}") for i in range(3)]
 
     solution = maximize(
         X[0] + 2 * X[1] - X[2],
@@ -170,7 +172,7 @@ def test_redundant_constraints():
 
 def test_degenerate_solution():
     # OCW, page 84
-    X = [Variable(f"x{i+1}") for i in range(4)]
+    X = [Variable(f"x{i + 1}") for i in range(4)]
 
     solution = minimize(
         X[0] + X[1] + 3 * X[2],
@@ -182,3 +184,121 @@ def test_degenerate_solution():
     )
 
     assert_solution_almost_equal((15, [0, 0, 5, 2]), solution)
+
+
+def test_abs_simple():
+    # Minimize abs(x) with x == 5
+    # Expected: x = 5, objective = 5
+    x = Variable("x")
+
+    solution = minimize(abs(x), (x == 5,))
+
+    assert np.isclose(solution[0], 5.0)
+    assert np.isclose(solution[1]["x"], 5.0)
+
+
+def test_abs_negative():
+    # Minimize abs(x) with x == -3
+    # Since all variables are non-negative, we need to use x - 3 == 0
+    # So we're minimizing abs(x - 3) with x == 0, giving |0 - 3| = 3
+    x = Variable("x")
+
+    solution = minimize(abs(x - 3), (x == 0,))
+
+    assert np.isclose(solution[0], 3.0)
+    assert np.isclose(solution[1]["x"], 0.0)
+
+
+def test_abs_multiple():
+    # Minimize abs(x) + abs(y) with x == 2, y == 3
+    # Expected: objective = 5
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(abs(x) + abs(y), (x == 2, y == 3))
+
+    assert np.isclose(solution[0], 5.0)
+    assert np.isclose(solution[1]["x"], 2.0)
+    assert np.isclose(solution[1]["y"], 3.0)
+
+
+def test_abs_with_coefficient():
+    # Minimize 2*abs(x) + y with x == 3, y == 1
+    # Expected: objective = 2*3 + 1 = 7
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(2 * abs(x) + y, (x == 3, y == 1))
+
+    assert np.isclose(solution[0], 7.0)
+    assert np.isclose(solution[1]["x"], 3.0)
+    assert np.isclose(solution[1]["y"], 1.0)
+
+
+def test_abs_unconstrained():
+    # Minimize abs(x - 5) where x >= 0
+    # Since all variables are non-negative, the minimum is at x = 5
+    # giving abs(5 - 5) = 0
+    x = Variable("x")
+
+    solution = minimize(abs(x - 5), ())
+
+    assert np.isclose(solution[0], 0.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)
+
+
+def test_abs_with_linear_term():
+    # Minimize abs(x - 2) + y with x + y == 10
+    # The optimal solution minimizes the absolute value
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(abs(x - 2) + y, (x + y == 10,))
+
+    # At optimum, x should be as close to 2 as possible
+    # Given x + y = 10 and x >= 0, y >= 0, the optimal is x = 2, y = 8
+    # giving abs(2 - 2) + 8 = 8
+    assert np.isclose(solution[0], 8.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 2.0, atol=1e-5)
+    assert np.isclose(solution[1]["y"], 8.0, atol=1e-5)
+
+
+def test_abs_maximize():
+    # Maximize -abs(x - 5) with 0 <= x <= 10
+    # This is equivalent to minimize abs(x - 5)
+    # Expected: x = 5, objective = 0
+    x = Variable("x")
+
+    solution = maximize(-abs(x - 5), (x <= 10,))
+
+    assert np.isclose(solution[0], 0.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)
+
+
+def test_abs_complex_expression():
+    # Minimize abs(2*x + 3*y - 10) with constraints
+    x = Variable("x")
+    y = Variable("y")
+
+    solution = minimize(abs(2 * x + 3 * y - 10), (x == 2, y == 2))
+
+    # At x=2, y=2: abs(2*2 + 3*2 - 10) = abs(4 + 6 - 10) = abs(0) = 0
+    assert np.isclose(solution[0], 0.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 2.0)
+    assert np.isclose(solution[1]["y"], 2.0)
+
+
+def test_abs_maximize_positive_raises_error():
+    # maximize(abs(x)) should raise AbsoluteValueRequiresMILP
+    x = Variable("x")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        maximize(abs(x), (x <= 10,))
+
+
+def test_abs_minimize_negative_raises_error():
+    # minimize(-abs(x)) should raise AbsoluteValueRequiresMILP
+    x = Variable("x")
+
+    with pytest.raises(AbsoluteValueRequiresMILP):
+        minimize(-abs(x), (x <= 10,))
