@@ -32,6 +32,9 @@ class ComparableMixin:
     def __eq__(self, other: Expression) -> Equal:
         return Equal(self, other)
 
+    def __hash__(self) -> int:
+        return id(self)
+
     def __ge__(self, other: Expression) -> GreaterOrEqual:
         return GreaterOrEqual(self, other)
 

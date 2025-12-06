@@ -431,7 +431,7 @@ def test_abs_constraint_right_side():
     x = Variable("x")
 
     with pytest.raises(AbsoluteValueRequiresMILP):
-        minimize(x, (3 <= abs(x - 5),))
+        minimize(x, (abs(x - 5) >= 3,))
 
 
 def test_abs_constraint_combined_with_objective():
