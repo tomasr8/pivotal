@@ -11,8 +11,8 @@ from pivotal.expressions import (
     Abs,
     Constraint,
     Equal,
-    ExprOrNumber,
     Expression,
+    ExprOrNumber,
     GreaterOrEqual,
     LessOrEqual,
     Sum,
@@ -587,7 +587,7 @@ def solve(
     all_vars = get_variable_names([objective, *constraints])
 
     program = as_tableau(_type, objective, constraints, tolerance=tolerance)
-    value, solution = _solve(program, max_iterations=max_iterations, tolerance=tolerance)
+    _, solution = _solve(program, max_iterations=max_iterations, tolerance=tolerance)
 
     # Map transformed variables back to original variables
     original_solution = apply_variable_mapping(solution, all_vars, var_mapping, original_vars)

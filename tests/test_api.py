@@ -571,7 +571,7 @@ def test_variable_free_can_be_negative():
 
 def test_variable_bounds_validation_lower_greater_than_upper():
     # lower > upper should raise ValueError
-    with pytest.raises(ValueError, match="Lower bound .* cannot be greater than upper bound"):
+    with pytest.raises(ValueError, match=r"Lower bound .* cannot be greater than upper bound"):
         Variable("x", lower=10, upper=5)
 
 
