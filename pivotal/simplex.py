@@ -356,6 +356,200 @@ def _extract_single_abs(expr: Expression) -> Abs | None:
             return None
 
 
+def transform_variable_bounds(
+    objective: Expression, constraints: list[Constraint]
+) -> tuple[Expression, list[Constraint], dict[str, dict]]:
+    """
+    Transform variables with non-default bounds.
+
+    Transformations:
+    - For free variables (lower=None, upper=None): x = x+ - x- where x+, x- >= 0
+    - For lower != 0: x = lower + x' where x' >= 0
+    - For upper bounds: add constraint x <= upper (or x' <= upper - lower after substitution)
+
+    Returns:
+    - Transformed objective
+    - Transformed constraints (with additional bound constraints)
+    - Variable mapping for inverse transformation
+    """
+    # Collect all unique variables and their bounds
+    vars_dict = {}
+
+    def collect_variables(expr: Expression | Constraint) -> None:
+        """Recursively collect all variables with their bounds."""
+        match expr:
+            case Variable(name=name, lower=lower, upper=upper):
+                if name not in vars_dict:
+                    vars_dict[name] = {"lower": lower, "upper": upper}
+            case Sum(elts=elts):
+                for elt in elts:
+                    collect_variables(elt)
+            case Abs(arg=arg):
+                collect_variables(arg)
+            case Constraint(left=left, right=right):
+                collect_variables(left)
+                collect_variables(right)
+
+    collect_variables(objective)
+    for constraint in constraints:
+        collect_variables(constraint)
+
+    # Create variable mappings and new constraints
+    var_mapping = {}
+    new_constraints = list(constraints)
+    substitutions = {}
+
+    for var_name, bounds in vars_dict.items():
+        lower = bounds["lower"]
+        upper = bounds["upper"]
+
+        if lower is None and upper is None:
+            # Free variable: x = x_pos - x_neg where both >= 0
+            x_pos = Variable(f"{var_name}_pos")
+            x_neg = Variable(f"{var_name}_neg")
+            substitutions[var_name] = x_pos - x_neg
+            var_mapping[var_name] = {"type": "free", "pos": f"{var_name}_pos", "neg": f"{var_name}_neg"}
+
+        elif lower is not None and lower != 0:
+            # Shifted variable: x = lower + x'
+            x_prime = Variable(f"{var_name}_shifted")
+            substitutions[var_name] = lower + x_prime
+            var_mapping[var_name] = {"type": "shifted", "shift": lower, "var": f"{var_name}_shifted"}
+
+            # Add upper bound constraint if specified
+            if upper is not None:
+                # x' <= upper - lower
+                new_constraints.append(x_prime <= upper - lower)
+
+        elif upper is not None:
+            # Only upper bound (lower = 0): add constraint x <= upper
+            x = Variable(var_name)
+            new_constraints.append(x <= upper)
+            var_mapping[var_name] = {"type": "upper_only", "upper": upper}
+
+    # If no transformations needed, return early
+    if not substitutions:
+        return objective, new_constraints, var_mapping
+
+    # Apply substitutions to objective and constraints
+    def substitute(expr: Expression) -> Expression:
+        """Substitute variables according to the mapping."""
+        match expr:
+            case Variable(name=name, coeff=coeff):
+                if name in substitutions:
+                    return coeff * substitutions[name] if coeff != 1 else substitutions[name]
+                return expr
+            case Sum(elts=elts):
+                new_elts = [substitute(elt) for elt in elts]
+                # Flatten nested sums and combine constants
+                flattened = []
+                for elt in new_elts:
+                    if isinstance(elt, Sum):
+                        flattened.extend(elt.elts)
+                    else:
+                        flattened.append(elt)
+                return Sum(*flattened) if len(flattened) > 1 else flattened[0]
+            case Abs(arg=arg, sign=sign):
+                return Abs(substitute(arg), sign)
+            case _:
+                return expr
+
+    def substitute_constraint(constraint: Constraint) -> Constraint:
+        """Substitute variables in a constraint."""
+        new_left = substitute(constraint.left)
+        new_right = substitute(constraint.right)
+        match constraint:
+            case Equal():
+                return Equal(new_left, new_right)
+            case LessOrEqual():
+                return LessOrEqual(new_left, new_right)
+            case GreaterOrEqual():
+                return GreaterOrEqual(new_left, new_right)
+            case _:
+                msg = f"Unknown constraint type: {type(constraint)}"
+                raise ValueError(msg)
+
+    new_objective = substitute(objective)
+    new_constraints = [substitute_constraint(c) for c in new_constraints]
+
+    return new_objective, new_constraints, var_mapping
+
+
+def apply_variable_mapping(
+    solution: np.ndarray, all_vars: list[str], var_mapping: dict[str, dict], original_vars: list[str]
+) -> np.ndarray:
+    """
+    Apply inverse variable mapping to get original variable values.
+
+    For free variables: x = x_pos - x_neg
+    For shifted variables: x = lower + x'
+    For upper-only variables: x = x (no transformation)
+    """
+    # Create a dictionary of transformed variable values
+    var_values = {name: solution[i] for i, name in enumerate(all_vars)}
+
+    # If no variable transformations, just extract original variables
+    if not var_mapping:
+        # Just extract values for original variables
+        return np.array([var_values.get(name, 0.0) for name in original_vars])
+
+    # Calculate original variable values with transformations applied
+    result_values = {}
+    for var_name in original_vars:
+        if var_name not in var_mapping:
+            # No transformation, use value directly
+            result_values[var_name] = var_values.get(var_name, 0.0)
+        else:
+            mapping = var_mapping[var_name]
+            match mapping["type"]:
+                case "free":
+                    # x = x_pos - x_neg
+                    x_pos = var_values.get(mapping["pos"], 0.0)
+                    x_neg = var_values.get(mapping["neg"], 0.0)
+                    result_values[var_name] = x_pos - x_neg
+                case "shifted":
+                    # x = lower + x'
+                    x_prime = var_values.get(mapping["var"], 0.0)
+                    result_values[var_name] = mapping["shift"] + x_prime
+                case "upper_only":
+                    # No transformation needed
+                    result_values[var_name] = var_values.get(var_name, 0.0)
+
+    # Convert back to array in the order of original_vars
+    return np.array([result_values[name] for name in original_vars])
+
+
+def evaluate_objective(objective: Expression, solution: np.ndarray, var_names: list[str]) -> float:
+    """
+    Evaluate the objective function value given a solution.
+
+    Args:
+        objective: The objective expression
+        solution: Array of variable values
+        var_names: List of variable names corresponding to solution values
+
+    Returns:
+        The objective function value
+    """
+    var_values = {name: solution[i] for i, name in enumerate(var_names)}
+
+    def evaluate(expr: Expression) -> float:
+        """Recursively evaluate an expression."""
+        match expr:
+            case int() | float():
+                return expr
+            case Variable(name=name, coeff=coeff):
+                return coeff * var_values.get(name, 0.0)
+            case Sum(elts=elts):
+                return sum(evaluate(elt) for elt in elts)
+            case Abs(arg=arg, sign=sign):
+                return sign * abs(evaluate(arg))
+            case _:
+                return 0.0
+
+    return evaluate(objective)
+
+
 def solve(
     _type: ProgramType,
     objective: Expression,
@@ -373,15 +567,39 @@ def solve(
     - all variable names (including auxiliary)
     - original variable names (user-defined only)
     """
+    # Store original objective for final value computation
+    original_objective = objective
+
+    # Get original variable names before any transformations
+    original_vars = get_variable_names([objective, *constraints])
+
+    # Convert constraints to list for transformations
+    constraints = list(constraints)
+
     # Linearize absolute values in the objective
-    objective, constraints, original_vars = linearize_abs(objective, constraints, _type)
+    objective, constraints, _ = linearize_abs(objective, constraints, _type)
+
+    # Transform variable bounds
+    objective, constraints, var_mapping = transform_variable_bounds(objective, constraints)
 
     # Get all variable names after transformation
     all_vars = get_variable_names([objective, *constraints])
 
     program = as_tableau(_type, objective, constraints, tolerance=tolerance)
     value, solution = _solve(program, max_iterations=max_iterations, tolerance=tolerance)
-    return value, solution, all_vars, original_vars
+
+    # Map transformed variables back to original variables
+    original_solution = apply_variable_mapping(solution, all_vars, var_mapping, original_vars)
+
+    # Compute objective value using original objective and mapped solution
+    original_value = evaluate_objective(original_objective, original_solution, original_vars)
+
+    # For maximization problems, negate the value (api.py will negate it back)
+    if _type == ProgramType.MAX:
+        original_value = -original_value
+
+    # Return the mapped solution with original variable names
+    return original_value, original_solution, original_vars, original_vars
 
 
 def _solve(program: Tableau, *, max_iterations: float, tolerance: float) -> tuple[float, np.ndarray]:
@@ -641,6 +859,9 @@ def find_pivot(program: Tableau) -> tuple[int, int] | None:
             positive = program.M[1:, j] > program.tolerance
             frac = program.M[1:, -1] / program.M[1:, j]
             frac[~positive] = np.inf
+            # If no valid pivot candidates (empty or all infinite), skip this column
+            if frac.size == 0 or np.all(np.isinf(frac)):
+                continue
             # Pick a pivot which minimizes b_i/p_ij
             min_i = np.argmin(frac)
             if frac[min_i] != np.inf:

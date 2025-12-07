@@ -3,7 +3,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from pivotal.api import maximize, minimize
-from pivotal.errors import AbsoluteValueRequiresMILP, Infeasible
+from pivotal.errors import AbsoluteValueRequiresMILP, Infeasible, Unbounded
 from pivotal.expressions import Variable
 
 
@@ -458,3 +458,161 @@ def test_abs_constraint_simple_variable():
 
     assert np.isclose(solution[0], 5.0, atol=1e-5)
     assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)
+
+
+############ Tests for variable bounds
+
+
+def test_variable_upper_bound():
+    # Maximize x subject to x <= 10
+    # Using upper bound in Variable constructor
+    x = Variable("x", upper=10)
+
+    solution = maximize(x, ())
+
+    assert np.isclose(solution[0], 10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 10.0, atol=1e-5)
+
+
+def test_variable_upper_bound_with_constraints():
+    # Minimize x + y subject to x + y >= 15, x <= 10, y <= 8
+    x = Variable("x", upper=10)
+    y = Variable("y", upper=8)
+
+    solution = minimize(x + y, (x + y >= 15,))
+
+    # Optimal: x = 10, y = 5 (or x = 7, y = 8)
+    # Since we minimize x + y = 15, both are valid
+    assert np.isclose(solution[0], 15.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"] + solution[1]["y"], 15.0, atol=1e-5)
+
+
+def test_variable_lower_bound_nonzero():
+    # Minimize x with x >= 5 (using lower bound)
+    x = Variable("x", lower=5)
+
+    solution = minimize(x, ())
+
+    assert np.isclose(solution[0], 5.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)
+
+
+def test_variable_lower_bound_negative():
+    # Minimize x with -10 <= x
+    # Since there's no upper bound, we need another constraint
+    x = Variable("x", lower=-10)
+
+    solution = minimize(x, (x <= 5,))
+
+    assert np.isclose(solution[0], -10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], -10.0, atol=1e-5)
+
+
+def test_variable_both_bounds():
+    # Maximize x with 5 <= x <= 10
+    x = Variable("x", lower=5, upper=10)
+
+    solution = maximize(x, ())
+
+    assert np.isclose(solution[0], 10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 10.0, atol=1e-5)
+
+
+def test_variable_both_bounds_with_objective():
+    # Minimize 2*x + y subject to x + y >= 20, 5 <= x <= 10, 8 <= y <= 15
+    x = Variable("x", lower=5, upper=10)
+    y = Variable("y", lower=8, upper=15)
+
+    solution = minimize(2 * x + y, (x + y >= 20,))
+
+    # Optimal: x = 5, y = 15 (minimize 2*5 + 15 = 25)
+    assert np.isclose(solution[0], 25.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 5.0, atol=1e-5)
+    assert np.isclose(solution[1]["y"], 15.0, atol=1e-5)
+
+
+def test_variable_free():
+    # Free variable can be negative
+    # Minimize x (should go to negative infinity without constraints)
+    # So we add x >= -10 as constraint
+    x = Variable("x", lower=None, upper=None)
+
+    solution = minimize(x, (x >= -10, x <= 5))
+
+    assert np.isclose(solution[0], -10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], -10.0, atol=1e-5)
+
+
+def test_variable_free_maximize():
+    # Maximize x with free variable
+    x = Variable("x", lower=None, upper=None)
+
+    solution = maximize(x, (x >= -5, x <= 10))
+
+    assert np.isclose(solution[0], 10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 10.0, atol=1e-5)
+
+
+def test_variable_free_can_be_negative():
+    # Test that free variable can actually be negative
+    # Minimize x + y subject to 2*x + y = 0, x free, y >= 0
+    x = Variable("x", lower=None, upper=None)
+    y = Variable("y")
+
+    solution = minimize(x + y, (2 * x + y == 0, x <= 10))
+
+    # From 2x + y = 0: y = -2x
+    # Minimize x + y = x - 2x = -x
+    # To minimize -x, maximize x, so x = 10, y = -20
+    # But y >= 0, so we need y = 0, thus x = 0
+    assert np.isclose(solution[1]["y"], 0.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], 0.0, atol=1e-5)
+
+
+def test_variable_bounds_validation_lower_greater_than_upper():
+    # lower > upper should raise ValueError
+    with pytest.raises(ValueError, match="Lower bound .* cannot be greater than upper bound"):
+        Variable("x", lower=10, upper=5)
+
+
+def test_variable_negative_bounds():
+    # Both bounds negative: -10 <= x <= -5
+    x = Variable("x", lower=-10, upper=-5)
+
+    solution = minimize(x, ())
+
+    assert np.isclose(solution[0], -10.0, atol=1e-5)
+    assert np.isclose(solution[1]["x"], -10.0, atol=1e-5)
+
+
+def test_variable_bounds_mixed_with_regular():
+    # Mix variables with and without custom bounds
+    x = Variable("x", lower=-5, upper=5)  # Bounded
+    y = Variable("y")  # Default: y >= 0
+
+    solution = minimize(x + y, (x + y >= 2,))
+
+    # Minimize x + y with x + y >= 2
+    # Optimal value is 2.0 (multiple optimal solutions possible)
+    assert np.isclose(solution[0], 2.0, atol=1e-5)
+    # Check that the constraint is satisfied
+    assert solution[1]["x"] + solution[1]["y"] >= 2.0 - 1e-5
+    # Check that bounds are respected
+    assert -5.0 - 1e-5 <= solution[1]["x"] <= 5.0 + 1e-5
+    assert solution[1]["y"] >= -1e-5
+
+
+def test_variable_bounds_unbounded():
+    # Variable with no bounds (free variable)
+    x = Variable("x", lower=None, upper=None)
+
+    with pytest.raises(Unbounded):
+        minimize(x, ())
+
+
+def test_variable_bounds_infeasible():
+    # Variable with conflicting bounds
+    x = Variable("x", lower=5, upper=10)
+
+    with pytest.raises(Infeasible):
+        minimize(x, (x <= 3,))

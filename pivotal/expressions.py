@@ -45,7 +45,14 @@ class ComparableMixin:
 class Variable(Expression, ComparableMixin):
     _id_iter = itertools.count()
 
-    def __init__(self, name: str | None = None, coeff: float = 1.0) -> None:
+    def __init__(
+        self,
+        name: str | None = None,
+        coeff: float = 1.0,
+        *,
+        lower: float | None = 0,
+        upper: float | None = None,
+    ) -> None:
         if name is None:
             _id = next(self._id_iter)
             self.name = f"_{_id}"
@@ -53,18 +60,27 @@ class Variable(Expression, ComparableMixin):
             self.name = name
         self.coeff = coeff
 
+        # Validate bounds
+        self.lower = lower
+        self.upper = upper
+
+        # Validate lower <= upper
+        if self.lower is not None and self.upper is not None and self.lower > self.upper:
+            msg = f"Lower bound ({self.lower}) cannot be greater than upper bound ({self.upper})"
+            raise ValueError(msg)
+
     def __abs__(self) -> "Abs":
         return Abs(self)
 
-    def __neg__(self) -> Self:
-        return Variable(name=self.name, coeff=-self.coeff)
+    def __neg__(self) -> "Variable":
+        return Variable(self.name, -self.coeff, lower=self.lower, upper=self.upper)
 
-    def __add__(self, other: "float | Self | Sum | Abs") -> "float | Self | Sum":
+    def __add__(self, other: "float | Variable | Sum | Abs") -> "float | Variable | Sum":
         match other:
             case Variable(name=name, coeff=coeff) if name == self.name:
                 if self.coeff + coeff == 0:
                     return 0
-                return Variable(name=name, coeff=self.coeff + coeff)
+                return Variable(name, self.coeff + coeff, lower=self.lower, upper=self.upper)
             case int() | float() if other == 0:
                 return self
             case Variable() | Abs() | int() | float():
@@ -89,14 +105,14 @@ class Variable(Expression, ComparableMixin):
     def __rsub__(self, other: float) -> "Self | Sum":
         return (-self).__radd__(other)
 
-    def __mul__(self, other: float) -> "float | Self":
+    def __mul__(self, other: float) -> "float | Variable":
         match other:
             case int() | float():
                 if other == 0:
                     return 0
                 if other == 1:
                     return self
-                return Variable(self.name, coeff=self.coeff * other)
+                return Variable(self.name, self.coeff * other, lower=self.lower, upper=self.upper)
             case _:
                 return NotImplemented
 

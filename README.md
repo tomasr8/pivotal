@@ -76,6 +76,42 @@ will be treated as simply `2*x+2`.
 
 The first argument to `minimize` and `maximize` is the objective function which must be either a single variable or a linear combination as in the examples above.
 
+#### Variable bounds
+
+By default, variables are assumed to be nonnegative, but arbitrary lower and upper bounds are supported:
+
+```python
+# Default: x >= 0, same as (lower=0, upper=None)
+x = Variable("x")
+
+# Lower bound: x >= 5
+y = Variable("y", lower=5)
+
+# Upper bound: 0 <= z <= 10
+z = Variable("z", upper=10)
+
+# Both bounds: -5 <= w <= 5
+w = Variable("w", lower=-5, upper=5)
+
+# Free variable (unbounded): -∞ < v < ∞
+v = Variable("v", lower=None, upper=None)
+```
+
+Example:
+
+```python
+from pivotal import minimize, Variable
+
+# Minimize 2*x + y subject to x + y >= 10
+# with bounds: 3 <= x <= 7, y >= 0
+x = Variable("x", lower=3, upper=7)
+y = Variable("y")
+
+result = minimize(2*x + y, (x + y >= 10,))
+# -> value: 13.0
+# -> variables: {'x': 3.0, 'y': 7.0}
+```
+
 ### Constraints
 
 There are three supported constraints: `==` (equality), `>=` (greater than or equal) and `<=` (less than or equal). You create a constraint simply by using these comparisons in expressions involving `Variable` instances. For example:
@@ -146,13 +182,8 @@ minimize(objective, constraints)
 
 `minimize` and `maximize` take two keyword arguments `max_iterations` and `tolerance`. `max_iterations` (default `math.inf`) controls the maximum number of iterations of the second phase of the Simplex algorithm. If the maximum number of iterations is reached a potentially non-optimal solution is returned. `tolerance` (default `1e-6`) controls the precision of floating point comparisons, e.g. when comparing against zero. Instead of `x == 0.0`, the algorithm considers a value to be zero when it is within the given tolerance: `abs(x) <= tolerance`.
 
-## Limitations
-
-- Currently, all variables are assumed to be nonnegative i.e. x >= 0.
-
 ## TODO (Contributions welcome)
 
-- Arbitrary variable bounds, e.g. `a <= x <= b`
 - MILP solver with branch & bound
 
 ## Development
