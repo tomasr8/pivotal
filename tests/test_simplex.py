@@ -4,7 +4,16 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-from pivotal.simplex import Pivots, Tableau, _solve, canonicalize, find_pivot, normalize_pivot, zero_out_cj
+from pivotal.simplex import (
+    Pivots,
+    ProgramType,
+    Tableau,
+    _solve,
+    canonicalize,
+    find_pivot,
+    normalize_pivot,
+    zero_out_cj,
+)
 
 
 def test_zero_out_cj_1():
@@ -132,7 +141,7 @@ def test_canonicalize_1():
     c = np.array([3, 4])
     types = np.array([0, 0])
 
-    Ac, bc, cc = canonicalize("min", A, b, c, types)
+    Ac, bc, cc = canonicalize(ProgramType.MIN, A, b, c, types)
     assert_array_equal(A, Ac)
     assert_array_equal(b, bc)
     assert_array_equal(c, cc)
@@ -144,7 +153,7 @@ def test_canonicalize_2():
     c = np.array([3, 4])
     types = np.array([0])
 
-    Ac, bc, cc = canonicalize("min", A, b, c, types)
+    Ac, bc, cc = canonicalize(ProgramType.MIN, A, b, c, types)
     assert_array_equal(Ac, [[-1, -1]])
     assert_array_equal(bc, [2])
     assert_array_equal(cc, [3, 4])
@@ -156,7 +165,7 @@ def test_canonicalize_3():
     c = np.array([3, 4])
     types = np.array([1])
 
-    Ac, bc, cc = canonicalize("min", A, b, c, types)
+    Ac, bc, cc = canonicalize(ProgramType.MIN, A, b, c, types)
     assert_array_equal(Ac, [[1, 1, -1]])
     assert_array_equal(bc, [2])
     assert_array_equal(cc, [3, 4, 0])
@@ -168,7 +177,7 @@ def test_canonicalize_4():
     c = np.array([3, 4])
     types = np.array([-1])
 
-    Ac, bc, cc = canonicalize("min", A, b, c, types)
+    Ac, bc, cc = canonicalize(ProgramType.MIN, A, b, c, types)
     assert_array_equal(Ac, [[1, 1, 1]])
     assert_array_equal(bc, [2])
     assert_array_equal(cc, [3, 4, 0])

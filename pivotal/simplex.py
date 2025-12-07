@@ -2,7 +2,7 @@ import math
 import warnings
 from collections.abc import Callable
 from enum import Enum, auto
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 import numpy as np
 
@@ -11,6 +11,7 @@ from pivotal.expressions import (
     Abs,
     Constraint,
     Equal,
+    ExprOrNumber,
     Expression,
     GreaterOrEqual,
     LessOrEqual,
@@ -131,8 +132,8 @@ class Tableau:
 
 
 def linearize_abs(
-    objective: Expression, constraints: list[Constraint], program_type: ProgramType
-) -> tuple[Expression, list[Constraint], list[str]]:
+    objective: ExprOrNumber, constraints: list[Constraint], program_type: ProgramType
+) -> tuple[ExprOrNumber, list[Constraint], list[str]]:
     """
     Linearize absolute value expressions in the objective function and constraints.
 
@@ -357,8 +358,8 @@ def _extract_single_abs(expr: Expression) -> Abs | None:
 
 
 def transform_variable_bounds(
-    objective: Expression, constraints: list[Constraint]
-) -> tuple[Expression, list[Constraint], dict[str, dict]]:
+    objective: ExprOrNumber, constraints: list[Constraint]
+) -> tuple[ExprOrNumber, list[Constraint], dict[str, dict]]:
     """
     Transform variables with non-default bounds.
 
@@ -519,7 +520,7 @@ def apply_variable_mapping(
     return np.array([result_values[name] for name in original_vars])
 
 
-def evaluate_objective(objective: Expression, solution: np.ndarray, var_names: list[str]) -> float:
+def evaluate_objective(objective: ExprOrNumber, solution: np.ndarray, var_names: list[str]) -> float:
     """
     Evaluate the objective function value given a solution.
 
@@ -552,7 +553,7 @@ def evaluate_objective(objective: Expression, solution: np.ndarray, var_names: l
 
 def solve(
     _type: ProgramType,
-    objective: Expression,
+    objective: ExprOrNumber,
     constraints: list[Constraint] | tuple[Constraint, ...],
     *,
     max_iterations: float,
@@ -666,7 +667,7 @@ def as_tableau(
 
 
 def canonicalize(
-    _type: ProgramType, A: np.ndarray, b: np.ndarray, c: np.ndarray, constraint_types: list[Literal[-1, 0, 1]]
+    _type: ProgramType, A: np.ndarray, b: np.ndarray, c: np.ndarray, constraint_types: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convert the LP to the canonical form:

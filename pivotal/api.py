@@ -1,7 +1,7 @@
 import math
 from typing import TypeAlias
 
-from pivotal.expressions import Constraint, Expression
+from pivotal.expressions import Constraint, ExprOrNumber
 from pivotal.simplex import ProgramType, solve
 
 
@@ -10,7 +10,7 @@ ResultType: TypeAlias = tuple[float, dict[str, float]]
 
 def optimize(
     _type: ProgramType,
-    objective: Expression,
+    objective: ExprOrNumber,
     constraints: list[Constraint] | tuple[Constraint, ...],
     max_iterations: float,
     tolerance: float,
@@ -30,7 +30,7 @@ def optimize(
 
 
 def minimize(
-    objective: Expression,
+    objective: ExprOrNumber,
     constraints: list[Constraint] | tuple[Constraint, ...],
     *,
     max_iterations: float = math.inf,
@@ -40,7 +40,7 @@ def minimize(
 
 
 def maximize(
-    objective: Expression,
+    objective: ExprOrNumber,
     constraints: list[Constraint] | tuple[Constraint, ...],
     *,
     max_iterations: float = math.inf,

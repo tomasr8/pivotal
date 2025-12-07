@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import itertools
 from collections import defaultdict
-from typing import Literal, Self
+from typing import Literal, Self, TypeAlias
+
+
+# Type alias for values that can be used in expressions
+ExprOrNumber: TypeAlias = "Expression | int | float"
 
 
 class Expression:
@@ -129,7 +133,7 @@ class Variable(Expression, ComparableMixin):
 
 
 class Sum(Expression, ComparableMixin):
-    def __init__(self, *elts: list[Expression]) -> None:
+    def __init__(self, *elts: ExprOrNumber) -> None:
         self.elts = elts
 
     def __abs__(self) -> Abs:
@@ -242,7 +246,7 @@ class Abs(Expression, ComparableMixin):
         return f"{sign}|{self.arg}|"
 
 
-def get_variable_coeffs(elem: Expression | Constraint) -> tuple[dict[str, float], float]:
+def get_variable_coeffs(elem: ExprOrNumber | Constraint) -> tuple[dict[str, float], float]:
     c = 0
     variables = defaultdict(float)
     match elem:
@@ -274,7 +278,7 @@ def get_variable_coeffs(elem: Expression | Constraint) -> tuple[dict[str, float]
     return variables, c
 
 
-def get_variable_names(elems: list[Expression | Constraint]) -> list[str]:
+def get_variable_names(elems: list[ExprOrNumber | Constraint]) -> list[str]:
     variables = set()
     for elem in elems:
         coeffs, _ = get_variable_coeffs(elem)
