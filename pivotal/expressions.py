@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import itertools
 from collections import defaultdict
 from typing import Literal, Self
@@ -69,13 +71,13 @@ class Variable(Expression, ComparableMixin):
             msg = f"Lower bound ({self.lower}) cannot be greater than upper bound ({self.upper})"
             raise ValueError(msg)
 
-    def __abs__(self) -> "Abs":
+    def __abs__(self) -> Abs:
         return Abs(self)
 
-    def __neg__(self) -> "Variable":
+    def __neg__(self) -> Variable:
         return Variable(self.name, -self.coeff, lower=self.lower, upper=self.upper)
 
-    def __add__(self, other: "float | Variable | Sum | Abs") -> "float | Variable | Sum":
+    def __add__(self, other: float | Variable | Sum | Abs) -> float | Variable | Sum:
         match other:
             case Variable(name=name, coeff=coeff) if name == self.name:
                 if self.coeff + coeff == 0:
@@ -90,7 +92,7 @@ class Variable(Expression, ComparableMixin):
             case _:
                 return NotImplemented
 
-    def __radd__(self, other: float) -> "Self | Sum":
+    def __radd__(self, other: float) -> Self | Sum:
         match other:
             case int() | float():
                 if other == 0:
@@ -99,13 +101,13 @@ class Variable(Expression, ComparableMixin):
             case _:
                 return NotImplemented
 
-    def __sub__(self, other: "float | Self | Sum | Abs") -> "float | Self | Sum":
+    def __sub__(self, other: float | Self | Sum | Abs) -> float | Self | Sum:
         return self.__add__(-other)
 
-    def __rsub__(self, other: float) -> "Self | Sum":
+    def __rsub__(self, other: float) -> Self | Sum:
         return (-self).__radd__(other)
 
-    def __mul__(self, other: float) -> "float | Variable":
+    def __mul__(self, other: float) -> float | Variable:
         match other:
             case int() | float():
                 if other == 0:
@@ -130,13 +132,13 @@ class Sum(Expression, ComparableMixin):
     def __init__(self, *elts: list[Expression]) -> None:
         self.elts = elts
 
-    def __abs__(self) -> "Abs":
+    def __abs__(self) -> Abs:
         return Abs(self)
 
     def __neg__(self) -> Self:
         return Sum(*(-expr for expr in self.elts))
 
-    def __add__(self, other: "float | Variable | Self | Abs") -> Self:
+    def __add__(self, other: float | Variable | Self | Abs) -> Self:
         match other:
             case Sum(elts=elts):
                 return Sum(*self.elts, *elts)
@@ -147,7 +149,7 @@ class Sum(Expression, ComparableMixin):
             case _:
                 return NotImplemented
 
-    def __sub__(self, other: "float | Variable | Self | Abs") -> Self:
+    def __sub__(self, other: float | Variable | Self | Abs) -> Self:
         return self.__add__(-other)
 
     def __radd__(self, other: float) -> Self:
