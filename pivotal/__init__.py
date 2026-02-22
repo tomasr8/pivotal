@@ -3,7 +3,7 @@ from pivotal.errors import AbsoluteValueRequiresMILP, Infeasible, NodeLimitReach
 from pivotal.expressions import Variable
 
 
-__version__ = "0.3.0"
+__version__ = "1.0.0"
 __all__ = [
     "AbsoluteValueRequiresMILP",
     "Infeasible",
