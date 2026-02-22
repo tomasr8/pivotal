@@ -2,7 +2,7 @@
     <img src="https://raw.githubusercontent.com/tomasr8/pivotal/master/logo.svg">
 </p>
 
-# No fuss Linear Programming solver
+# No fuss Linear & Integer Programming solver
 
 ```python
 from pivotal import minimize, maximize, Variable
@@ -28,7 +28,7 @@ maximize(objective, constraints)
 
 ## About
 
-`Pivotal` is not aiming to compete with commerical solvers like Gurobi. Rather, it is aiming to simplify the process of creating and solving linear programs thanks to its very simple and intuitive API. The solver itself uses a 2-phase Simplex algorithm.
+`Pivotal` is not aiming to compete with commerical solvers like Gurobi. Rather, it is aiming to simplify the process of creating and solving linear programs thanks to its very simple and intuitive API. The LP solver uses a 2-phase Simplex algorithm, and MILP problems are solved using branch & bound with LP relaxations.
 
 ## Installation
 
@@ -112,6 +112,51 @@ result = minimize(2*x + y, (x + y >= 10,))
 # -> variables: {'x': 3.0, 'y': 7.0}
 ```
 
+#### Integer & binary variables
+
+Variables can be declared as integer or binary for mixed-integer linear programming (MILP):
+
+```python
+# Integer variable: must take integer values
+n = Variable("n", var_type="integer")
+
+# Integer variable with bounds: 0 <= k <= 10, integer
+k = Variable("k", var_type="integer", upper=10)
+
+# Binary variable: 0 or 1 (bounds are enforced automatically)
+b = Variable("b", var_type="binary")
+```
+
+When any variable in the problem is integer or binary, the solver automatically switches to branch & bound. The existing `minimize`/`maximize` API works unchanged:
+
+```python
+from pivotal import minimize, Variable
+
+x = Variable("x", var_type="integer")
+y = Variable("y")  # continuous
+
+minimize(x + y, (x + y >= 3.5, y <= 1))
+# -> value: 3.5
+# -> variables: {'x': 3.0, 'y': 0.5}
+```
+
+A classic 0-1 knapsack:
+
+```python
+from pivotal import maximize, Variable
+
+items = [Variable(f"x{i}", var_type="binary") for i in range(4)]
+weights = [2, 3, 4, 5]
+values = [3, 4, 5, 6]
+
+maximize(
+    sum(values[i] * items[i] for i in range(4)),
+    (sum(weights[i] * items[i] for i in range(4)) <= 8,),
+)
+# -> value: 10.0
+# -> variables: {'x0': 0.0, 'x1': 1.0, 'x2': 0.0, 'x3': 1.0}
+```
+
 ### Constraints
 
 There are three supported constraints: `==` (equality), `>=` (greater than or equal) and `<=` (less than or equal). You create a constraint simply by using these comparisons in expressions involving `Variable` instances. For example:
@@ -178,13 +223,13 @@ minimize(objective, constraints)
 # -> variables: {'x': 5.0}
 ```
 
-### Iterations & Tolerance
+### Iterations, Tolerance & Node Limit
 
-`minimize` and `maximize` take two keyword arguments `max_iterations` and `tolerance`. `max_iterations` (default `math.inf`) controls the maximum number of iterations of the second phase of the Simplex algorithm. If the maximum number of iterations is reached a potentially non-optimal solution is returned. `tolerance` (default `1e-6`) controls the precision of floating point comparisons, e.g. when comparing against zero. Instead of `x == 0.0`, the algorithm considers a value to be zero when it is within the given tolerance: `abs(x) <= tolerance`.
+`minimize` and `maximize` take the following keyword arguments:
 
-## TODO (Contributions welcome)
-
-- MILP solver with branch & bound
+- `max_iterations` (default `math.inf`): maximum number of iterations of the second phase of the Simplex algorithm. If the maximum number of iterations is reached, a potentially non-optimal solution is returned.
+- `tolerance` (default `1e-6`): precision of floating point comparisons, e.g. when comparing against zero. Instead of `x == 0.0`, the algorithm considers a value to be zero when it is within the given tolerance: `abs(x) <= tolerance`. Also used for integrality checks in MILP.
+- `node_limit` (default `10_000`): maximum number of branch & bound nodes to explore when solving MILPs. If the limit is reached and a feasible solution has been found, the best solution so far is returned. Otherwise, `pivotal.NodeLimitReached` is raised.
 
 ## Development
 

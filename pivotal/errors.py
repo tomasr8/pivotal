@@ -12,3 +12,7 @@ class Infeasible(PivotalError):
 
 class AbsoluteValueRequiresMILP(PivotalError):
     pass
+
+
+class NodeLimitReached(PivotalError):
+    pass

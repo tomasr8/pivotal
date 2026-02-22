@@ -8,6 +8,9 @@ from typing import Literal, Self, TypeAlias
 # Type alias for values that can be used in expressions
 ExprOrNumber: TypeAlias = "Expression | int | float"
 
+# Variable type for MILP support
+VarType: TypeAlias = Literal["continuous", "integer", "binary"]
+
 
 class Expression:
     """Base class for all expressions."""
@@ -58,6 +61,7 @@ class Variable(Expression, ComparableMixin):
         *,
         lower: float | None = 0,
         upper: float | None = None,
+        var_type: VarType = "continuous",
     ) -> None:
         if name is None:
             _id = next(self._id_iter)
@@ -65,6 +69,18 @@ class Variable(Expression, ComparableMixin):
         else:
             self.name = name
         self.coeff = coeff
+        self.var_type = var_type
+
+        # Binary variables enforce bounds 0/1
+        if var_type == "binary":
+            if lower is not None and lower != 0:
+                msg = "Binary variables must have lower bound 0"
+                raise ValueError(msg)
+            if upper is not None and upper != 1:
+                msg = "Binary variables must have upper bound 1"
+                raise ValueError(msg)
+            lower = 0
+            upper = 1
 
         # Validate bounds
         self.lower = lower
@@ -79,14 +95,14 @@ class Variable(Expression, ComparableMixin):
         return Abs(self)
 
     def __neg__(self) -> Variable:
-        return Variable(self.name, -self.coeff, lower=self.lower, upper=self.upper)
+        return Variable(self.name, -self.coeff, lower=self.lower, upper=self.upper, var_type=self.var_type)
 
     def __add__(self, other: float | Variable | Sum | Abs) -> float | Variable | Sum:
         match other:
             case Variable(name=name, coeff=coeff) if name == self.name:
                 if self.coeff + coeff == 0:
                     return 0
-                return Variable(name, self.coeff + coeff, lower=self.lower, upper=self.upper)
+                return Variable(name, self.coeff + coeff, lower=self.lower, upper=self.upper, var_type=self.var_type)
             case int() | float() if other == 0:
                 return self
             case Variable() | Abs() | int() | float():
@@ -118,7 +134,9 @@ class Variable(Expression, ComparableMixin):
                     return 0
                 if other == 1:
                     return self
-                return Variable(self.name, self.coeff * other, lower=self.lower, upper=self.upper)
+                return Variable(
+                    self.name, self.coeff * other, lower=self.lower, upper=self.upper, var_type=self.var_type
+                )
             case _:
                 return NotImplemented
 
@@ -284,3 +302,29 @@ def get_variable_names(elems: list[ExprOrNumber | Constraint]) -> list[str]:
         coeffs, _ = get_variable_coeffs(elem)
         variables |= set(coeffs.keys())
     return sorted(variables)
+
+
+def collect_integer_variables(
+    objective: ExprOrNumber,
+    constraints: list[Constraint],
+) -> dict[str, VarType]:
+    """Collect all variables with integer or binary type from expressions."""
+    integer_vars: dict[str, VarType] = {}
+
+    def _collect(expr: ExprOrNumber | Constraint) -> None:
+        match expr:
+            case Variable(name=name, var_type=var_type) if var_type != "continuous":
+                integer_vars[name] = var_type
+            case Sum(elts=elts):
+                for elt in elts:
+                    _collect(elt)
+            case Abs(arg=arg):
+                _collect(arg)
+            case Constraint(left=left, right=right):
+                _collect(left)
+                _collect(right)
+
+    _collect(objective)
+    for c in constraints:
+        _collect(c)
+    return integer_vars
