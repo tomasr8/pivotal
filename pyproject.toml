@@ -1,9 +1,9 @@
 [project]
 name = "pivotal-solver"
 authors = [{ name = "Tomas Roun", email = "tomas.roun8@gmail.com" }]
-description = "High-level Linear Programming solver using the Simplex algorithm"
+description = "High-level Linear & Integer Programming solver"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = [
     "linear programming",
     "linear programming solver",
@@ -20,7 +20,6 @@ license = { file = "LICENSE" }
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",

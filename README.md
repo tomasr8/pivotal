@@ -32,7 +32,7 @@ maximize(objective, constraints)
 
 ## Installation
 
-Python >=3.11 is required.
+Python >=3.12 is required.
 
 Install via pip:
 

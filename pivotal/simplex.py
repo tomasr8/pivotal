@@ -2,7 +2,6 @@ import math
 import warnings
 from collections.abc import Callable
 from enum import Enum, auto
-from typing import TypeVar
 
 import numpy as np
 
@@ -27,11 +26,8 @@ class ProgramType(Enum):
     MAX = auto()
 
 
-_T = TypeVar("_T")
-
-
-def suppress_divide_by_zero_warning(fn: Callable[..., _T]) -> None:
-    def _fn_suppressed(*args, **kwargs) -> _T:
+def suppress_divide_by_zero_warning[T](fn: Callable[..., T]) -> Callable[..., T]:
+    def _fn_suppressed(*args, **kwargs) -> T:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             return fn(*args, **kwargs)

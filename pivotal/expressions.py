@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import itertools
 from collections import defaultdict
-from typing import Literal, Self, TypeAlias
+from typing import Literal, Self
 
 
 # Type alias for values that can be used in expressions
-ExprOrNumber: TypeAlias = "Expression | int | float"
+type ExprOrNumber = Expression | int | float
 
 # Variable type for MILP support
-VarType: TypeAlias = Literal["continuous", "integer", "binary"]
+type VarType = Literal["continuous", "integer", "binary"]
 
 
 class Expression:

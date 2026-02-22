@@ -1,5 +1,4 @@
 import math
-from typing import TypeAlias
 
 from pivotal.expressions import Constraint, ExprOrNumber, collect_integer_variables
 from pivotal.milp import solve_milp
@@ -7,7 +6,7 @@ from pivotal.simplex import ProgramType
 from pivotal.simplex import solve as lp_solve
 
 
-ResultType: TypeAlias = tuple[float, dict[str, float]]
+type ResultType = tuple[float, dict[str, float]]
 
 
 def optimize(
