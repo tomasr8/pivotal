@@ -34,8 +34,8 @@ dev = [
     "pytest==9.0.2",
     "pytest-snapshot==0.9.0",
     "pytest-cov==7.0.0",
-    "ruff==0.14.14",
-    "ty==0.0.14",
+    "ruff==0.15.1",
+    "ty==0.0.17",
 ]
 
 [project.urls]
