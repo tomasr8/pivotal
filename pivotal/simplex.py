@@ -86,7 +86,7 @@ class Tableau:
         self, A: np.ndarray, b: np.ndarray, c: np.ndarray, pivots: Pivots | None = None, *, tolerance: float = 1e-6
     ) -> None:
         self.M = np.block([[np.atleast_2d(c), np.atleast_2d(0)], [A, np.atleast_2d(b).T]])
-        self.pivots = pivots if pivots else Pivots({})
+        self.pivots = pivots or Pivots({})
         self.tolerance = tolerance
 
     @property
