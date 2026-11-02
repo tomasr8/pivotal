@@ -45,6 +45,7 @@ GitHub = "https://github.com/tomasr8/pivotal"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
+    "CPY001",
     "D",
     "ANN002",
     "ANN003",
