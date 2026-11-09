@@ -31,11 +31,11 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "pytest-snapshot==0.9.0",
     "pytest-cov==7.1.0",
-    "ruff==0.17.2",
-    "ty==0.0.92",
+    "ruff==0.17.3",
+    "ty==0.0.95",
 ]
 
 [project.urls]
@@ -78,5 +78,5 @@ packages = ["pivotal"]
 path = "pivotal/__init__.py"
 
 [build-system]
-requires = ["hatchling==1.32.4"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
